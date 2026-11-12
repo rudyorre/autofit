@@ -1,0 +1,120 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+#m3-app[data-mode="light"] {
+  --m3-canvas: hsl(156, 22%, 94.5%);
+  --m3-surface: hsl(0, 0%, 100%);
+  --m3-surface-dim: hsl(158, 19%, 90.2%);
+  --m3-surface-hi: hsl(158, 19%, 85.8%);
+  --m3-ink: hsl(172, 32%, 10%);
+  --m3-ink-2: hsl(170, 13%, 37%);
+  --m3-ink-3: hsl(170, 10%, 55%);
+  --m3-hairline: hsla(170, 22%, 16%, 0.10);
+
+  --m3-teal: hsl(170, 84%, 27%);
+  --m3-teal-track: hsla(170, 62%, 34%, 0.16);
+  --m3-teal-tint: hsl(164, 54%, 88%);
+  --m3-teal-hero: linear-gradient(138deg, hsl(165, 58%, 88.5%) 0%, hsl(175, 48%, 93.5%) 100%);
+  --m3-hero-pill: hsla(0, 0%, 100%, 0.72);
+  --m3-on-teal: hsl(173, 88%, 12%);
+
+  --m3-blue: hsl(218, 82%, 50%);
+  --m3-blue-track: hsla(218, 80%, 52%, 0.16);
+  --m3-blue-tint: hsl(215, 86%, 91.5%);
+  --m3-on-blue: hsl(220, 76%, 20%);
+
+  --m3-amber: hsl(25, 90%, 44%);
+  --m3-amber-track: hsla(25, 90%, 46%, 0.17);
+  --m3-amber-tint: hsl(33, 94%, 89.5%);
+  --m3-on-amber: hsl(22, 86%, 19%);
+
+  --m3-coral: hsl(5, 76%, 50%);
+  --m3-coral-track: hsla(5, 76%, 50%, 0.16);
+  --m3-coral-tint: hsl(8, 88%, 92.5%);
+  --m3-on-coral: hsl(5, 76%, 22%);
+
+  --m3-gap-fill: hsla(170, 14%, 30%, 0.065);
+  --m3-gap-stroke: hsla(170, 14%, 30%, 0.24);
+  --m3-plateau-fill: hsla(25, 90%, 46%, 0.11);
+  --m3-dock: hsla(158, 28%, 97.5%, 0.92);
+  --m3-dock-shadow: 0 10px 28px rgba(8, 34, 30, 0.14);
+  --m3-sheet-backdrop: rgba(8, 22, 20, 0.42);
+}
+
+#m3-app[data-mode="dark"] {
+  --m3-canvas: hsl(172, 18%, 6.8%);
+  --m3-surface: hsl(172, 15%, 12%);
+  --m3-surface-dim: hsl(172, 15%, 16.2%);
+  --m3-surface-hi: hsl(172, 16%, 21%);
+  --m3-ink: hsl(162, 24%, 94.5%);
+  --m3-ink-2: hsl(166, 11%, 67%);
+  --m3-ink-3: hsl(166, 9%, 47%);
+  --m3-hairline: hsla(165, 22%, 86%, 0.12);
+
+  --m3-teal: hsl(165, 72%, 62%);
+  --m3-teal-track: hsla(165, 72%, 62%, 0.18);
+  --m3-teal-tint: hsl(170, 44%, 19%);
+  --m3-teal-hero: linear-gradient(138deg, hsl(169, 44%, 18%) 0%, hsl(176, 34%, 13.2%) 100%);
+  --m3-hero-pill: hsla(172, 24%, 8%, 0.56);
+  --m3-on-teal: hsl(164, 86%, 89%);
+
+  --m3-blue: hsl(213, 94%, 74%);
+  --m3-blue-track: hsla(213, 94%, 74%, 0.19);
+  --m3-blue-tint: hsl(217, 42%, 19.5%);
+  --m3-on-blue: hsl(213, 96%, 91%);
+
+  --m3-amber: hsl(32, 95%, 67%);
+  --m3-amber-track: hsla(32, 95%, 67%, 0.19);
+  --m3-amber-tint: hsl(26, 44%, 19%);
+  --m3-on-amber: hsl(33, 96%, 90%);
+
+  --m3-coral: hsl(8, 90%, 70%);
+  --m3-coral-track: hsla(8, 90%, 70%, 0.19);
+  --m3-coral-tint: hsl(7, 40%, 19.5%);
+  --m3-on-coral: hsl(9, 96%, 90%);
+
+  --m3-gap-fill: hsla(165, 20%, 82%, 0.06);
+  --m3-gap-stroke: hsla(165, 20%, 82%, 0.25);
+  --m3-plateau-fill: hsla(32, 95%, 67%, 0.11);
+  --m3-dock: hsla(172, 18%, 14%, 0.92);
+  --m3-dock-shadow: 0 14px 32px rgba(0, 0, 0, 0.52);
+  --m3-sheet-backdrop: rgba(0, 0, 0, 0.62);
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+
+#m3-app {
+  background: var(--m3-canvas);
+  color: var(--m3-ink);
+  font-family: "Google Sans", -apple-system, BlinkMacSystemFont, "SF Pro Rounded", "Segoe UI", Roboto, sans-serif;
+  min-height: 100vh;
+  font-size: 14px;
+  line-height: 1.42;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+button, select, input, textarea {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--m3-teal);
+  outline-offset: 2px;
+}
