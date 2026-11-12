@@ -1,0 +1,19 @@
+{
+  "name": "Autofit — Personal Fitness & Health",
+  "short_name": "Autofit",
+  "description": "Self-hosted lifting logger, longitudinal regime explorer, Garmin .FIT analyzer, and Google Health hub.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#edf4f1",
+  "theme_color": "#0b7f6b",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

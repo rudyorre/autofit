@@ -1,0 +1,21 @@
+services:
+  autofit:
+    build: .
+    container_name: autofit
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      AUTOFIT_ADDR: ":8080"
+      AUTOFIT_DB_PATH: "/data/autofit.db"
+      AUTOFIT_OWNER_SECRET: "${AUTOFIT_OWNER_SECRET:-}"
+      AUTOFIT_TAILSCALE_AUTH: "${AUTOFIT_TAILSCALE_AUTH:-false}"
+      GOOGLE_HEALTH_CLIENT_ID: "${GOOGLE_HEALTH_CLIENT_ID:-}"
+      GOOGLE_HEALTH_CLIENT_SECRET: "${GOOGLE_HEALTH_CLIENT_SECRET:-}"
+      GOOGLE_HEALTH_REDIRECT_URL: "${GOOGLE_HEALTH_REDIRECT_URL:-http://localhost:8080/api/v1/integrations/google-health/callback}"
+      GARMIN_PERSONAL_API_KEY: "${GARMIN_PERSONAL_API_KEY:-}"
+    volumes:
+      - autofit_data:/data
+
+volumes:
+  autofit_data:
