@@ -188,7 +188,10 @@ function formatEquipLabel(eq: string): string {
     case 'sled':
       return 'Leg Press Sled';
     case 'cable':
+    case 'cable_stack':
       return 'Cable Stack';
+    case 'bodyweight':
+      return 'Bodyweight';
     case 'machine':
       return 'Machine';
     default:

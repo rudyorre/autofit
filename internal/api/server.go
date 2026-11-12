@@ -965,6 +965,9 @@ func spaHandler(distFS fs.FS) http.HandlerFunc {
 		if clean == "" {
 			clean = "index.html"
 		}
+		if clean == "index.html" {
+			w.Header().Set("Cache-Control", "no-cache")
+		}
 		if clean == "manifest.webmanifest" {
 			w.Header().Set("Content-Type", "application/manifest+json")
 		}
@@ -988,6 +991,7 @@ func spaHandler(distFS fs.FS) http.HandlerFunc {
 			http.NotFound(w, r)
 			return
 		}
+		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write(idxBytes)
 	}

@@ -19,8 +19,8 @@ export interface LiftLoggerState {
 
 export const TARE_PRESETS: Record<string, { label: string; equipment: string; tare: number; mode: string }> = {
   olympic_45: { label: '45 lb Barbell', equipment: 'olympic_bar', tare: 45, mode: 'plates_per_side' },
-  smith_20: { label: '20 lb Smith', equipment: 'smith', tare: 20, mode: 'plates_per_side' },
-  smith_15: { label: '15 lb Smith', equipment: 'smith', tare: 15, mode: 'plates_per_side' },
+  smith_20: { label: '20 lb Bar / Smith', equipment: 'smith', tare: 20, mode: 'plates_per_side' },
+  smith_15: { label: '15 lb Bar / Smith', equipment: 'smith', tare: 15, mode: 'plates_per_side' },
   sled_125: { label: '125 lb Sled', equipment: 'sled', tare: 125, mode: 'plates_per_side' },
   sled_118: { label: '118 lb Sled', equipment: 'sled', tare: 118, mode: 'plates_per_side' },
   dumbbell_2x: { label: '2× Per-Hand DB', equipment: 'dumbbell_pair', tare: 0, mode: 'per_hand' },
@@ -120,11 +120,11 @@ export function renderLiftLoggerViewHTML(data: BootstrapPayload, st: LiftLoggerS
           </div>
         </div>
 
-        <!-- Built-in 1-Tap Plate & Tare Calculator (Replaces =45+2*45 / =20+... / =125+... / =2*47.5!) -->
+        <!-- Built-in 1-Tap Bar & Plate Calculator (Replaces =45+2*45 / =20+... / =125+... / =2*47.5!) -->
         <div class="m3-seam-bot" style="padding: 13px 16px; display: flex; flex-direction: column; gap: 9px;">
           <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
             <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-              <strong style="font-size: 12px;">Plate &amp; Tare Calculator:</strong>
+              <strong style="font-size: 12px;">Bar &amp; Plate Calculator:</strong>
               <select id="select-calc-target" class="m3-input" style="width: auto; padding: 5px 10px; font-size: 12px;">
                 ${items
                   .map(
@@ -271,7 +271,7 @@ export function renderLiftLoggerViewHTML(data: BootstrapPayload, st: LiftLoggerS
                           style="width: 64px; text-align: center; padding: 6px;"
                         />
                         <span class="tabular" style="font-size: 11px; color: var(--m3-ink-2);">
-                          Equip: ${esc(equip)} ${tare > 0 ? `(${tare} lb tare)` : ''}
+                          ${esc(formatEquipBaseLabel(equip, tare))}
                         </span>
                       </div>
                     </div>
@@ -302,6 +302,25 @@ export function renderLiftLoggerViewHTML(data: BootstrapPayload, st: LiftLoggerS
       </div>
     </div>
   `;
+}
+
+function formatEquipBaseLabel(equip: string, baseLb: number): string {
+  switch (equip) {
+    case 'olympic_bar':
+      return `${baseLb || 45} lb Olympic bar`;
+    case 'smith':
+      return `${baseLb || 20} lb lighter / Smith bar`;
+    case 'sled':
+      return `${baseLb || 125} lb leg press sled`;
+    case 'dumbbell_pair':
+      return '2× per-hand dumbbells';
+    case 'cable_stack':
+      return 'Cable / weight stack';
+    case 'bodyweight':
+      return 'Bodyweight';
+    default:
+      return baseLb > 0 ? `${equip} (${baseLb} lb bar/base)` : equip;
+  }
 }
 
 function esc(s: string): string {

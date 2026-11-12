@@ -12,7 +12,8 @@ export const HORIZON_OPTIONS = [
 export function renderHorizonExplorerHTML(
   trend: TrendPayload | null,
   catalog: MetricCatalogItemDTO[],
-  activeHorizon: string
+  activeHorizon: string,
+  showCloseBtn = false
 ): string {
   const title = trend?.title || 'Bench Press (Working Weight)';
   const current = trend?.current || '--';
@@ -20,6 +21,7 @@ export function renderHorizonExplorerHTML(
   const summary = trend?.summary || '2022–2026 longitudinal density';
   const insight = trend?.insight || 'Tap or drag across any regime to inspect exact dates, gaps, plateaus, and equipment shifts.';
   const activeKey = trend?.key || 'lift:bench-press';
+  const hasAltBar = !!(trend?.alt_series?.points?.length);
 
   const chipsHTML = catalog
     .slice(0, 22)
@@ -74,8 +76,15 @@ export function renderHorizonExplorerHTML(
             </div>
           </div>
 
-          <div class="m3-seg" role="group" aria-label="Time Horizon">
-            ${horizonHTML}
+          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <div class="m3-seg" role="group" aria-label="Time Horizon">
+              ${horizonHTML}
+            </div>
+            ${
+              showCloseBtn
+                ? `<button type="button" id="btn-close-explorer" class="m3-pill" style="padding: 5px 10px;">✕ Close</button>`
+                : ''
+            }
           </div>
         </div>
 
@@ -105,7 +114,7 @@ export function renderHorizonExplorerHTML(
 
         <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 8px; font-size: 11px; color: var(--m3-ink-2);">
           <span style="display: inline-flex; align-items: center; gap: 5px;">
-            <span style="width: 12px; height: 3px; border-radius: 2px; background: var(--m3-teal);"></span>Primary Trajectory
+            <span style="width: 12px; height: 3px; border-radius: 2px; background: var(--m3-teal);"></span>${hasAltBar ? '45 lb Barbell (=45+…)' : 'Primary Trajectory'}
           </span>
           <span style="display: inline-flex; align-items: center; gap: 5px;">
             <span style="width: 10px; height: 8px; border: 1px dashed var(--m3-gap-stroke); background: var(--m3-gap-fill); border-radius: 2px;"></span>No-Data Gap
@@ -114,8 +123,11 @@ export function renderHorizonExplorerHTML(
             <span style="width: 10px; height: 8px; background: var(--m3-plateau-fill); border-radius: 2px;"></span>Plateau Zone
           </span>
           ${
-            trend?.alt_series?.points?.length
-              ? `<span style="display: inline-flex; align-items: center; gap: 5px;">
+            hasAltBar && trend?.alt_series
+              ? `<span
+                   style="display: inline-flex; align-items: center; gap: 5px; cursor: help;"
+                   title="Sessions logged with =15+… or =20+… (lighter / counterbalanced Smith bar) instead of a 45 lb Olympic bar. Plotted separately so they don't create fake dips on your 45 lb barbell line."
+                 >
                    <span style="width: 8px; height: 8px; border-radius: 999px; border: 2px solid var(--m3-amber);"></span>${escapeHtml(trend.alt_series.label)}
                  </span>`
               : ''
@@ -421,14 +433,15 @@ export function bindAndDrawHorizonCanvas(
       const v = trend.series[idx];
       const altPt = trend.alt_series?.points?.find((p) => p.idx === idx);
       const dens = trend.density?.[idx] ?? 0;
+      const formulaNote = altPt?.raw_formula ? ` [sheet: ${altPt.raw_formula}]` : '';
       if (v === null || v === undefined) {
         if (altPt) {
-          readoutEl.textContent = `${lbl} • ${altPt.val} ${trend.unit} (${trend.alt_series?.label || 'Alt Equipment'})`;
+          readoutEl.textContent = `${lbl} • ${altPt.val} ${trend.unit} on 15–20 lb bar${formulaNote}`;
         } else {
           readoutEl.textContent = `${lbl} • Explicit No-Data Hiatus (0 sessions)`;
         }
       } else {
-        const altSuffix = altPt ? ` + ${altPt.val} ${trend.unit} Smith` : '';
+        const altSuffix = altPt ? ` • also ${altPt.val} ${trend.unit} on 15–20 lb bar${formulaNote}` : '';
         readoutEl.textContent = `${lbl} • ${v.toFixed(v % 1 === 0 ? 0 : 1)} ${trend.unit}${altSuffix} (${dens} entries)`;
       }
     }

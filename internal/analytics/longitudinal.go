@@ -335,7 +335,7 @@ func (e *Engine) buildLiftTrend(ctx context.Context, userID, slug, horizon strin
 		RefDate:       refDate,
 		Samples:       primarySamples,
 		AltSamples:    smithSamples,
-		AltLabel:      "Smith Bar (15–20 lb tare)",
+		AltLabel:      "15–20 lb Lighter / Smith Bar (=15+ / =20+)",
 		GapDaysThresh: 21, // >21 days missing = explicit strength hiatus
 		AggregateMax:  true,
 		GlobalDates:   allLiftDates,
@@ -892,7 +892,7 @@ func buildRuleBasedInsight(cfg bucketConfig, firstVal, lastVal float64, firstLbl
 		parts = append(parts, fmt.Sprintf("Longest no-data hiatus spanned %d weeks (%s → %s), broken cleanly rather than interpolated.", maxInt(1, longest.DurationDays/7), longest.StartDate[:7], longest.EndDate[:7]))
 	}
 	if alt != nil && len(alt.Points) > 0 {
-		parts = append(parts, fmt.Sprintf("Separated %d %s session(s) as hollow markers to keep Olympic bar PRs uncorrupted.", len(alt.Points), alt.Label))
+		parts = append(parts, fmt.Sprintf("Plotted %d lighter-bar session(s) (=15+ / =20+ bar base) as separate hollow dots so they don't create fake dips on your 45 lb barbell curve.", len(alt.Points)))
 	}
 	if len(parts) == 0 {
 		return fmt.Sprintf("Holding steady around %g %s across %d logged data points.", lastVal, cfg.Unit, len(cfg.Samples))

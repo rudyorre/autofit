@@ -34,6 +34,14 @@ interface AppState {
   lift: LiftLoggerState;
 }
 
+const TAB_DEFAULT_METRICS: Record<TabKey, string> = {
+  today: 'readiness',
+  fitness: 'lift:bench-press',
+  sleep: 'sleep',
+  health: 'lab:apob',
+  lift: 'lift:bench-press',
+};
+
 const state: AppState = {
   theme: (localStorage.getItem('autofit_theme') as 'light' | 'dark') || 'light',
   viewport: window.innerWidth < 760 ? 'mobile' : 'desktop',
@@ -43,7 +51,7 @@ const state: AppState = {
   liftQuery: '',
   calDrawerOpen: false,
   syncDrawerOpen: false,
-  explorerOpen: true,
+  explorerOpen: false,
   activeMetric: 'lift:bench-press',
   activeHorizon: 'all',
   bootstrap: null,
@@ -230,6 +238,7 @@ function renderApp(): void {
             type="button"
             id="rail-fab-lift"
             data-switch-tab="lift"
+            data-active="${state.activeTab === 'lift' ? 'true' : 'false'}"
             style="width: 56px; height: 56px; border-radius: 18px; background: var(--m3-teal); color: var(--m3-canvas); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; font-weight: 700;"
           >
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -252,7 +261,7 @@ function renderApp(): void {
       <!-- Main Content Stage -->
       <main class="main-stage">
         <div class="stage-inner">
-          <!-- Flush Google Health App Bar + 7-Day Ring Strip -->
+          <!-- Flush Google Health App Bar (+ 7-Day Ring Strip on Daily Wearable Views) -->
           <div style="display: flex; flex-direction: column; gap: 10px;">
             <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
               <button
@@ -266,7 +275,7 @@ function renderApp(): void {
                 <span class="tabular" style="color: var(--m3-ink-2); font-weight: 500;">${activeDay?.battery_pct || 92}%</span>
               </button>
 
-              <h1 id="top-view-title" style="margin: 0; font-size: 16px; font-weight: 800; letter-spacing: -0.01em;">
+              <h1 id="top-view-title" style="margin: 0; font-size: 17px; font-weight: 800; letter-spacing: -0.01em;">
                 ${tabTitles[state.activeTab]}
               </h1>
 
@@ -290,9 +299,13 @@ function renderApp(): void {
               </div>
             </div>
 
-            <div id="week-strip" style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px;">
-              ${weekStripHTML}
-            </div>
+            ${
+              state.activeTab === 'today' || state.activeTab === 'sleep'
+                ? `<div id="week-strip" style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px;">
+                     ${weekStripHTML}
+                   </div>`
+                : ''
+            }
           </div>
 
           ${renderCalibrationDrawerHTML(boot, state.calDrawerOpen)}
@@ -300,7 +313,12 @@ function renderApp(): void {
 
           ${
             state.explorerOpen
-              ? renderHorizonExplorerHTML(state.trend, boot.metric_catalog || [], state.activeHorizon)
+              ? renderHorizonExplorerHTML(
+                  state.trend,
+                  boot.metric_catalog || [],
+                  state.activeHorizon,
+                  state.activeTab !== 'fitness'
+                )
               : ''
           }
 
@@ -316,7 +334,14 @@ function renderApp(): void {
           ${renderDockBtn('sleep', 'Sleep')}
           ${renderDockBtn('health', 'Health')}
         </div>
-        <button type="button" id="dock-fab-lift" data-switch-tab="lift" class="dock-fab" aria-label="Log Lift">
+        <button
+          type="button"
+          id="dock-fab-lift"
+          data-switch-tab="lift"
+          data-active="${state.activeTab === 'lift' ? 'true' : 'false'}"
+          class="dock-fab"
+          aria-label="Log Lift"
+        >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
           <span style="font-size: 10px;">Lift</span>
         </button>
@@ -412,15 +437,23 @@ function bindInteractiveHandlers(root: HTMLElement, boot: BootstrapPayload): voi
     });
   });
 
-  // Tab switching
+  // Tab switching (Desktop Left Rail + Mobile Dock + In-Card Buttons)
   root.querySelectorAll<HTMLElement>('[data-switch-tab]').forEach((el) => {
     el.addEventListener('click', (e) => {
+      e.preventDefault();
       e.stopPropagation();
       const tab = el.getAttribute('data-switch-tab') as TabKey;
-      if (tab) {
-        state.activeTab = tab;
+      if (!tab) return;
+      state.activeTab = tab;
+      state.calDrawerOpen = false;
+      state.syncDrawerOpen = false;
+      state.explorerOpen = tab === 'fitness';
+      if (tab === 'fitness' && !state.activeMetric.startsWith('lift:') && state.activeMetric !== 'vo2') {
+        void refreshTrend('lift:bench-press', state.activeHorizon, true);
+      } else {
         renderApp();
       }
+      window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
     });
   });
 
@@ -446,7 +479,19 @@ function bindInteractiveHandlers(root: HTMLElement, boot: BootstrapPayload): voi
     renderApp();
   });
   document.getElementById('btn-toggle-explorer')?.addEventListener('click', () => {
-    state.explorerOpen = !state.explorerOpen;
+    const nextOpen = !state.explorerOpen;
+    state.explorerOpen = nextOpen;
+    if (nextOpen) {
+      const targetMetric = TAB_DEFAULT_METRICS[state.activeTab] || 'lift:bench-press';
+      if (state.activeTab !== 'fitness' && state.activeMetric !== targetMetric) {
+        void refreshTrend(targetMetric, state.activeHorizon, true);
+        return;
+      }
+    }
+    renderApp();
+  });
+  document.getElementById('btn-close-explorer')?.addEventListener('click', () => {
+    state.explorerOpen = false;
     renderApp();
   });
 

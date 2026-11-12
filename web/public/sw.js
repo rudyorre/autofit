@@ -1,4 +1,4 @@
-const CACHE_NAME = 'autofit-v0-cache-v1';
+const CACHE_NAME = 'autofit-v0-cache-v2';
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -22,8 +22,14 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Network-first with cache fallback for read-only bootstrap & trend GET endpoints (offline gym resilience!)
-  if (url.pathname.startsWith('/api/v1/bootstrap') || url.pathname.startsWith('/api/v1/trends')) {
+  // Network-first with cache fallback for HTML navigations & read-only API endpoints
+  // so fresh UI deploys load immediately online while still working 100% offline in the gym!
+  const isHTMLNav =
+    request.mode === 'navigate' || url.pathname === '/' || url.pathname === '/index.html';
+  const isReadAPI =
+    url.pathname.startsWith('/api/v1/bootstrap') || url.pathname.startsWith('/api/v1/trends');
+
+  if (isHTMLNav || isReadAPI) {
     event.respondWith(
       fetch(request)
         .then((resp) => {
@@ -33,12 +39,12 @@ self.addEventListener('fetch', (event) => {
           }
           return resp;
         })
-        .catch(() => caches.match(request))
+        .catch(() => caches.match(request).then((m) => m || caches.match('/index.html')))
     );
     return;
   }
 
-  // Static assets & SPA navigation: cache-first with background refresh
+  // Hashed static assets (/assets/*, icons): cache-first with background refresh
   event.respondWith(
     caches.match(request).then((cached) => {
       const fetchPromise = fetch(request)
