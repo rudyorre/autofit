@@ -424,11 +424,13 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 	}
 
 	catalog, _ := s.engine.BuildMetricCatalog(ctx, userID, anchor)
+	overview, _ := s.engine.BuildPillarDashboard(ctx, userID, selDT)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"anchor_date":     anchor.Format("2006-01-02"),
 		"selected_date":   selectedDate,
 		"selected_index":  selectedIdx,
+		"overview":        overview,
 		"week_strip":      weekStrip,
 		"intraday": map[string]any{
 			"hourly_steps": hourlyStepsArr,

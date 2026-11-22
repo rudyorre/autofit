@@ -1,4 +1,4 @@
-const CACHE_NAME = 'autofit-v0-cache-v2';
+const CACHE_NAME = 'autofit-v0-cache-v3';
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {

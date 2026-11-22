@@ -387,7 +387,8 @@
   padding: 5px;
   box-shadow: var(--m3-dock-shadow);
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   gap: 2px;
 }
 .dock-tab {

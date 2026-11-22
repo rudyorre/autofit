@@ -1,4 +1,13 @@
-import type { BootstrapPayload, CalibrationSuiteDTO, CardioActivityDTO, TrendPayload, WorkoutDTO } from './types';
+import type {
+  BootstrapPayload,
+  CalibrationSuiteDTO,
+  CardioActivityDTO,
+  PillarDashboardDTO,
+  TrainingPhaseDTO,
+  TrendPayload,
+  UserPreferencesDTO,
+  WorkoutDTO,
+} from './types';
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(url, {
@@ -21,6 +30,22 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   return resp.json() as Promise<T>;
 }
 
+export interface UnifiedCheckinInput {
+  local_date?: string;
+  weight_lb?: number;
+  body_fat_pct?: number;
+  waist_in?: number;
+  screen_time_min?: number;
+  mobility_min?: number;
+  sleep_hours?: number;
+  sleep_efficiency_pct?: number;
+  cardio_min?: number;
+  cardio_distance_mi?: number;
+  cardio_avg_hr?: number;
+  mobility_tests?: Array<{ test_slug: string; value_num: number; unit?: string }>;
+  notes?: string;
+}
+
 export const api = {
   getBootstrap(date?: string): Promise<BootstrapPayload> {
     const qs = date ? `?date=${encodeURIComponent(date)}` : '';
@@ -30,6 +55,27 @@ export const api = {
   getTrend(metric: string, horizon: string): Promise<TrendPayload> {
     const qs = `?metric=${encodeURIComponent(metric)}&horizon=${encodeURIComponent(horizon)}`;
     return jsonFetch<TrendPayload>(`/api/v1/trends${qs}`);
+  },
+
+  updatePreferences(prefs: UserPreferencesDTO): Promise<{ preferences: UserPreferencesDTO; overview: PillarDashboardDTO }> {
+    return jsonFetch('/api/v1/preferences', {
+      method: 'PUT',
+      body: JSON.stringify(prefs),
+    });
+  },
+
+  updateActivePhase(phase: Partial<TrainingPhaseDTO>): Promise<{ phase: TrainingPhaseDTO; overview: PillarDashboardDTO }> {
+    return jsonFetch('/api/v1/phases/active', {
+      method: 'PUT',
+      body: JSON.stringify(phase),
+    });
+  },
+
+  logCheckin(payload: UnifiedCheckinInput): Promise<{ local_date: string; logged: string[]; overview: PillarDashboardDTO }> {
+    return jsonFetch('/api/v1/checkins', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   },
 
   logWorkout(payload: Omit<WorkoutDTO, 'source'>): Promise<{ workout: WorkoutDTO }> {

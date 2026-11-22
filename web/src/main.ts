@@ -1,18 +1,19 @@
 import './styles/tokens.css';
 import './styles/layout.css';
 
-import { api } from './api/client';
-import type { BootstrapPayload, EnrichedLiftItemDTO, TrendPayload, WorkoutSetInput } from './api/types';
+import { api, type UnifiedCheckinInput } from './api/client';
+import type { BootstrapPayload, EnrichedLiftItemDTO, FeatureFlagsDTO, TrendPayload, WorkoutSetInput } from './api/types';
 import { drawCapsuleBarChart, drawMiniWaveCanvas } from './components/CapsuleChart';
 import { renderMiniDayRingSVG } from './components/GappedRing';
 import { bindAndDrawHorizonCanvas, renderHorizonExplorerHTML } from './components/HorizonExplorer';
 import { flushOfflineQueue, generateLocalUUID, listQueuedWorkouts, logOrQueueWorkout } from './offline/queue';
+import { renderCheckInDrawerHTML, renderCustomizeDrawerHTML } from './views/CheckInCustomizeDrawers';
 import { renderCalibrationDrawerHTML, renderDataSyncDrawerHTML } from './views/Drawers';
 import { renderFitnessViewHTML } from './views/FitnessView';
 import { renderHealthViewHTML } from './views/HealthView';
 import { computeCalcWeights, renderLiftLoggerViewHTML, TARE_PRESETS, type LiftLoggerState } from './views/LiftLoggerView';
+import { renderOverviewViewHTML } from './views/OverviewView';
 import { renderSleepViewHTML } from './views/SleepView';
-import { renderTodayViewHTML } from './views/TodayView';
 
 type TabKey = 'today' | 'fitness' | 'sleep' | 'health' | 'lift';
 
@@ -25,6 +26,10 @@ interface AppState {
   liftQuery: string;
   calDrawerOpen: boolean;
   syncDrawerOpen: boolean;
+  checkinDrawerOpen: boolean;
+  checkinShowAll: boolean;
+  customizeDrawerOpen: boolean;
+  expandedPillars: Record<string, boolean>;
   explorerOpen: boolean;
   activeMetric: string;
   activeHorizon: string;
@@ -35,9 +40,9 @@ interface AppState {
 }
 
 const TAB_DEFAULT_METRICS: Record<TabKey, string> = {
-  today: 'readiness',
+  today: 'pillar:strength',
   fitness: 'lift:bench-press',
-  sleep: 'sleep',
+  sleep: 'pillar:sleep',
   health: 'lab:apob',
   lift: 'lift:bench-press',
 };
@@ -51,8 +56,12 @@ const state: AppState = {
   liftQuery: '',
   calDrawerOpen: false,
   syncDrawerOpen: false,
+  checkinDrawerOpen: false,
+  checkinShowAll: false,
+  customizeDrawerOpen: false,
+  expandedPillars: {},
   explorerOpen: false,
-  activeMetric: 'lift:bench-press',
+  activeMetric: 'pillar:strength',
   activeHorizon: 'all',
   bootstrap: null,
   trend: null,
@@ -156,8 +165,29 @@ function renderApp(): void {
 
   const activeDay = boot.week_strip[boot.selected_index] || boot.week_strip[boot.week_strip.length - 1];
   const gh = boot.integrations?.google_health;
+  const flags: FeatureFlagsDTO = boot.overview?.preferences?.feature_flags || {
+    pillar_strength: true,
+    pillar_cardio: true,
+    pillar_sleep: true,
+    pillar_weight: false,
+    pillar_body_fat: false,
+    pillar_flexibility: false,
+    pillar_screen_time: false,
+    view_health_labs: false,
+    tool_ols_calibration: false,
+    tool_wearable_intraday: false,
+  };
+
+  // Redirect back to Overview if user toggled off the tab they were currently viewing
+  if (state.activeTab === 'health' && !flags.view_health_labs) {
+    state.activeTab = 'today';
+  }
+  if (state.activeTab === 'sleep' && !flags.pillar_sleep) {
+    state.activeTab = 'today';
+  }
+
   const tabTitles: Record<TabKey, string> = {
-    today: activeDay?.title || 'Today',
+    today: 'Overview',
     fitness: 'Fitness & Lifts',
     sleep: 'Sleep & Recovery',
     health: 'Clinical Health',
@@ -185,7 +215,7 @@ function renderApp(): void {
   let tabBodyHTML = '';
   switch (state.activeTab) {
     case 'today':
-      tabBodyHTML = renderTodayViewHTML(boot, state.stepMode);
+      tabBodyHTML = renderOverviewViewHTML(boot, state.expandedPillars, state.stepMode);
       break;
     case 'fitness':
       tabBodyHTML = renderFitnessViewHTML(boot, state.liftQuery);
@@ -201,6 +231,9 @@ function renderApp(): void {
       break;
   }
 
+  const showWeekStrip =
+    state.activeTab === 'sleep' || (state.activeTab === 'today' && flags.tool_wearable_intraday);
+
   root.innerHTML = `
     <!-- Top App & Viewport Bar -->
     <header class="preview-bar">
@@ -208,12 +241,16 @@ function renderApp(): void {
         <span style="background: var(--m3-teal-tint); color: var(--m3-on-teal); width: 24px; height: 24px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-weight: 800;">✦</span>
         <strong style="font-size: 14px;">Autofit</strong>
         <span class="tabular" style="color: var(--m3-ink-2); font-weight: 600;">
-          ${boot.total_workouts} SQLite workouts
+          ${boot.overview ? `${boot.overview.on_track_count}/${boot.overview.enabled_count} pillars on track` : `${boot.total_workouts} workouts`}
           ${state.lift.queuedOfflineCount > 0 ? ` • ${state.lift.queuedOfflineCount} offline queued` : ''}
         </span>
       </div>
 
       <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+        <button type="button" id="btn-open-customize" class="m3-pill" style="padding: 5px 11px;">
+          <span>⚙ Customize</span>
+        </button>
+
         <button type="button" id="btn-open-sync" class="m3-pill" style="padding: 5px 11px;">
           <span>⇄ Sync &amp; CSV</span>
           ${gh?.status === 'expiring_soon' ? '<span style="color: var(--m3-amber);">●</span>' : ''}
@@ -231,7 +268,7 @@ function renderApp(): void {
     </header>
 
     <div class="app-shell">
-      <!-- Desktop Left Navigation Rail -->
+      <!-- Desktop Left Navigation Rail (Feature-Flagged) -->
       <aside id="m3-rail" aria-label="Primary Navigation">
         <div style="display: flex; flex-direction: column; align-items: center; gap: 18px; width: 100%;">
           <button
@@ -246,40 +283,61 @@ function renderApp(): void {
           </button>
 
           <nav style="display: flex; flex-direction: column; gap: 14px; width: 100%;">
-            ${renderRailBtn('today', 'Today', '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>')}
+            ${renderRailBtn('today', 'Overview', '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>')}
             ${renderRailBtn('fitness', 'Fitness', '<path d="M3 17l5-5 4 4 8-9"/><path d="M16 7h4v4"/>')}
-            ${renderRailBtn('sleep', 'Sleep', '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>')}
-            ${renderRailBtn('health', 'Health', '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>')}
+            ${
+              flags.pillar_sleep
+                ? renderRailBtn('sleep', 'Sleep', '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>')
+                : ''
+            }
+            ${
+              flags.view_health_labs
+                ? renderRailBtn('health', 'Health', '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>')
+                : ''
+            }
           </nav>
         </div>
 
         <div class="tabular" style="font-size: 11px; color: var(--m3-ink-2); text-align: center;">
-          WAL Ready<br/>v0.1
+          WAL Ready<br/>v0.2
         </div>
       </aside>
 
       <!-- Main Content Stage -->
       <main class="main-stage">
         <div class="stage-inner">
-          <!-- Flush Google Health App Bar (+ 7-Day Ring Strip on Daily Wearable Views) -->
+          <!-- Calm Context Bar -->
           <div style="display: flex; flex-direction: column; gap: 10px;">
             <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-              <button
-                type="button"
-                id="btn-device-pill"
-                data-toggle-sync="true"
-                style="background: var(--m3-surface); padding: 6px 12px 6px 10px; border-radius: 9999px; display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600;"
-              >
-                <span style="width: 8px; height: 8px; border-radius: 9999px; background: var(--m3-teal);"></span>
-                <span>Fitbit Air</span>
-                <span class="tabular" style="color: var(--m3-ink-2); font-weight: 500;">${activeDay?.battery_pct || 92}%</span>
-              </button>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <h1 id="top-view-title" style="margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -0.02em;">
+                  ${tabTitles[state.activeTab]}
+                </h1>
+                ${
+                  flags.tool_wearable_intraday
+                    ? `<button
+                         type="button"
+                         id="btn-device-pill"
+                         data-toggle-sync="true"
+                         style="background: var(--m3-surface); padding: 5px 10px 5px 8px; border-radius: 9999px; display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600;"
+                       >
+                         <span style="width: 7px; height: 7px; border-radius: 9999px; background: var(--m3-teal);"></span>
+                         <span>Fitbit Air</span>
+                         <span class="tabular" style="color: var(--m3-ink-2); font-weight: 500;">${activeDay?.battery_pct || 92}%</span>
+                       </button>`
+                    : ''
+                }
+              </div>
 
-              <h1 id="top-view-title" style="margin: 0; font-size: 17px; font-weight: 800; letter-spacing: -0.01em;">
-                ${tabTitles[state.activeTab]}
-              </h1>
-
-              <div style="display: flex; align-items: center; gap: 6px;">
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                <button
+                  type="button"
+                  id="btn-open-checkin"
+                  class="m3-pill"
+                  style="background: var(--m3-surface); padding: 6px 11px;"
+                >
+                  ${state.checkinDrawerOpen ? 'Close Check-In' : '+ Check-In'}
+                </button>
                 <button
                   type="button"
                   id="btn-toggle-explorer"
@@ -288,19 +346,21 @@ function renderApp(): void {
                 >
                   ${state.explorerOpen ? 'Hide 4y Chart' : '4y Trends'}
                 </button>
-                <button
-                  type="button"
-                  id="btn-tune-scores"
-                  class="m3-pill"
-                  style="background: var(--m3-surface); padding: 6px 11px;"
-                >
-                  Tune
-                </button>
+                ${
+                  flags.tool_ols_calibration
+                    ? `<button
+                         type="button"
+                         id="btn-tune-scores"
+                         class="m3-pill"
+                         style="background: var(--m3-surface); padding: 6px 11px;"
+                       >Tune</button>`
+                    : ''
+                }
               </div>
             </div>
 
             ${
-              state.activeTab === 'today' || state.activeTab === 'sleep'
+              showWeekStrip
                 ? `<div id="week-strip" style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px;">
                      ${weekStripHTML}
                    </div>`
@@ -308,7 +368,9 @@ function renderApp(): void {
             }
           </div>
 
-          ${renderCalibrationDrawerHTML(boot, state.calDrawerOpen)}
+          ${renderCheckInDrawerHTML(boot, state.checkinDrawerOpen, state.checkinShowAll)}
+          ${renderCustomizeDrawerHTML(boot, state.customizeDrawerOpen)}
+          ${renderCalibrationDrawerHTML(boot, state.calDrawerOpen && flags.tool_ols_calibration)}
           ${renderDataSyncDrawerHTML(boot, state.syncDrawerOpen)}
 
           ${
@@ -326,13 +388,13 @@ function renderApp(): void {
         </div>
       </main>
 
-      <!-- Mobile Sticky Frosted Pill Dock + Squircle + Lift FAB -->
+      <!-- Mobile Sticky Frosted Pill Dock + Squircle + Lift FAB (Feature-Flagged) -->
       <div id="m3-floating-dock" role="navigation" aria-label="Mobile Navigation">
         <div class="dock-pill">
-          ${renderDockBtn('today', 'Today')}
+          ${renderDockBtn('today', 'Overview')}
           ${renderDockBtn('fitness', 'Fitness')}
-          ${renderDockBtn('sleep', 'Sleep')}
-          ${renderDockBtn('health', 'Health')}
+          ${flags.pillar_sleep ? renderDockBtn('sleep', 'Sleep') : ''}
+          ${flags.view_health_labs ? renderDockBtn('health', 'Health') : ''}
         </div>
         <button
           type="button"
@@ -447,6 +509,8 @@ function bindInteractiveHandlers(root: HTMLElement, boot: BootstrapPayload): voi
       state.activeTab = tab;
       state.calDrawerOpen = false;
       state.syncDrawerOpen = false;
+      state.checkinDrawerOpen = false;
+      state.customizeDrawerOpen = false;
       state.explorerOpen = tab === 'fitness';
       if (tab === 'fitness' && !state.activeMetric.startsWith('lift:') && state.activeMetric !== 'vo2') {
         void refreshTrend('lift:bench-press', state.activeHorizon, true);
@@ -458,6 +522,44 @@ function bindInteractiveHandlers(root: HTMLElement, boot: BootstrapPayload): voi
   });
 
   // Drawers & Explorer toggles
+  const toggleCheckin = () => {
+    state.checkinDrawerOpen = !state.checkinDrawerOpen;
+    if (state.checkinDrawerOpen) {
+      state.customizeDrawerOpen = false;
+      state.syncDrawerOpen = false;
+      state.calDrawerOpen = false;
+    }
+    renderApp();
+  };
+  const toggleCustomize = () => {
+    state.customizeDrawerOpen = !state.customizeDrawerOpen;
+    if (state.customizeDrawerOpen) {
+      state.checkinDrawerOpen = false;
+      state.syncDrawerOpen = false;
+      state.calDrawerOpen = false;
+    }
+    renderApp();
+  };
+
+  document.getElementById('btn-open-checkin')?.addEventListener('click', toggleCheckin);
+  document.getElementById('btn-hero-checkin')?.addEventListener('click', toggleCheckin);
+  document.getElementById('btn-close-checkin')?.addEventListener('click', () => {
+    state.checkinDrawerOpen = false;
+    renderApp();
+  });
+  document.getElementById('btn-toggle-all-checkin')?.addEventListener('click', () => {
+    state.checkinShowAll = !state.checkinShowAll;
+    renderApp();
+  });
+
+  document.getElementById('btn-open-customize')?.addEventListener('click', toggleCustomize);
+  document.getElementById('btn-hero-customize')?.addEventListener('click', toggleCustomize);
+  document.getElementById('btn-footer-customize')?.addEventListener('click', toggleCustomize);
+  document.getElementById('btn-close-customize')?.addEventListener('click', () => {
+    state.customizeDrawerOpen = false;
+    renderApp();
+  });
+
   document.getElementById('btn-tune-scores')?.addEventListener('click', () => {
     state.calDrawerOpen = !state.calDrawerOpen;
     renderApp();
@@ -468,6 +570,10 @@ function bindInteractiveHandlers(root: HTMLElement, boot: BootstrapPayload): voi
   });
   document.getElementById('btn-open-sync')?.addEventListener('click', () => {
     state.syncDrawerOpen = !state.syncDrawerOpen;
+    if (state.syncDrawerOpen) {
+      state.checkinDrawerOpen = false;
+      state.customizeDrawerOpen = false;
+    }
     renderApp();
   });
   document.getElementById('btn-device-pill')?.addEventListener('click', () => {
@@ -482,7 +588,7 @@ function bindInteractiveHandlers(root: HTMLElement, boot: BootstrapPayload): voi
     const nextOpen = !state.explorerOpen;
     state.explorerOpen = nextOpen;
     if (nextOpen) {
-      const targetMetric = TAB_DEFAULT_METRICS[state.activeTab] || 'lift:bench-press';
+      const targetMetric = TAB_DEFAULT_METRICS[state.activeTab] || 'pillar:strength';
       if (state.activeTab !== 'fitness' && state.activeMetric !== targetMetric) {
         void refreshTrend(targetMetric, state.activeHorizon, true);
         return;
@@ -493,6 +599,171 @@ function bindInteractiveHandlers(root: HTMLElement, boot: BootstrapPayload): voi
   document.getElementById('btn-close-explorer')?.addEventListener('click', () => {
     state.explorerOpen = false;
     renderApp();
+  });
+
+  // Glass-Box Pillar Card: expand/collapse "Under the Hood" raw breakdown
+  root.querySelectorAll<HTMLElement>('[data-toggle-hood]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const key = btn.getAttribute('data-toggle-hood') || '';
+      if (key) {
+        state.expandedPillars[key] = !state.expandedPillars[key];
+        renderApp();
+      }
+    });
+  });
+
+  // Instant Feature Flag Toggles (persisted in SQLite user_preferences)
+  root.querySelectorAll<HTMLElement>('[data-toggle-flag]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const flagKey = btn.getAttribute('data-toggle-flag') as keyof FeatureFlagsDTO | null;
+      const prefs = boot.overview?.preferences;
+      if (!flagKey || !prefs) return;
+      const nextPrefs = {
+        ...prefs,
+        feature_flags: {
+          ...prefs.feature_flags,
+          [flagKey]: !prefs.feature_flags[flagKey],
+        },
+      };
+      try {
+        await api.updatePreferences(nextPrefs);
+        await refreshData(state.selectedDate);
+      } catch (err) {
+        showToast(`Flag update failed: ${(err as Error).message}`);
+      }
+    });
+  });
+
+  // Active Phase Editor: Toggle Focus Pillar (max 2)
+  root.querySelectorAll<HTMLElement>('[data-toggle-focus]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const key = btn.getAttribute('data-toggle-focus') || '';
+      const phase = boot.overview?.phase;
+      if (!key || !phase) return;
+      const cur = [...(phase.focus_pillars || [])];
+      const idx = cur.indexOf(key);
+      if (idx >= 0) {
+        if (cur.length === 1) {
+          showToast('Keep at least 1 Focus pillar in your active phase.');
+          return;
+        }
+        cur.splice(idx, 1);
+      } else {
+        if (cur.length >= 2) {
+          cur.shift(); // Keep clean 1-2 focus limit by cycling oldest out
+        }
+        cur.push(key);
+      }
+      try {
+        await api.updateActivePhase({ ...phase, focus_pillars: cur });
+        await refreshData(state.selectedDate);
+      } catch (err) {
+        showToast(`Phase update failed: ${(err as Error).message}`);
+      }
+    });
+  });
+
+  // Active Phase Form Submit (Name, Start Date, Maintenance Floor)
+  document.getElementById('form-phase-editor')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const phase = boot.overview?.phase;
+    if (!phase) return;
+    const name = (document.getElementById('in-phase-name') as HTMLInputElement)?.value.trim() || phase.name;
+    const startDate = (document.getElementById('in-phase-start') as HTMLInputElement)?.value || phase.start_date;
+    const floorVal = parseFloat((document.getElementById('in-phase-floor') as HTMLInputElement)?.value || '75');
+    const floors: Record<string, number> = { ...(phase.floors || {}) };
+    ['strength', 'cardio', 'sleep', 'weight', 'body_fat', 'flexibility', 'screen_time'].forEach((k) => {
+      floors[k] = Number.isFinite(floorVal) ? floorVal : 75;
+    });
+    try {
+      await api.updateActivePhase({ ...phase, name, start_date: startDate, floors });
+      showToast(`Updated phase "${name}"!`);
+      await refreshData(state.selectedDate);
+    } catch (err) {
+      showToast(`Phase save failed: ${(err as Error).message}`);
+    }
+  });
+
+  // Formula Cohort & Optimal Targets Submit (recomputes all scores on demand!)
+  document.getElementById('form-formula-prefs')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const prefs = boot.overview?.preferences;
+    if (!prefs) return;
+    const sex = ((document.getElementById('in-pref-sex') as HTMLSelectElement)?.value || prefs.sex) as 'male' | 'female';
+    const age = parseInt((document.getElementById('in-pref-age') as HTMLInputElement)?.value || String(prefs.age), 10);
+    const weightTarget = parseFloat((document.getElementById('in-pref-weight') as HTMLInputElement)?.value || String(prefs.weight_target_lb));
+    const bfLo = parseFloat((document.getElementById('in-pref-bflo') as HTMLInputElement)?.value || String(prefs.bf_opt_low));
+    const bfHi = parseFloat((document.getElementById('in-pref-bfhi') as HTMLInputElement)?.value || String(prefs.bf_opt_high));
+    const screenTarget = parseInt((document.getElementById('in-pref-screen') as HTMLInputElement)?.value || String(prefs.screen_time_target_min), 10);
+    const mobTarget = parseInt((document.getElementById('in-pref-mob') as HTMLInputElement)?.value || String(prefs.mobility_weekly_target_min), 10);
+
+    try {
+      await api.updatePreferences({
+        ...prefs,
+        sex,
+        age: Number.isFinite(age) ? age : prefs.age,
+        weight_target_lb: Number.isFinite(weightTarget) ? weightTarget : prefs.weight_target_lb,
+        bf_opt_low: Number.isFinite(bfLo) ? bfLo : prefs.bf_opt_low,
+        bf_opt_high: Number.isFinite(bfHi) ? bfHi : prefs.bf_opt_high,
+        screen_time_target_min: Number.isFinite(screenTarget) ? screenTarget : prefs.screen_time_target_min,
+        mobility_weekly_target_min: Number.isFinite(mobTarget) ? mobTarget : prefs.mobility_weekly_target_min,
+      });
+      showToast('Formulas updated — all scores recalculated on demand!');
+      await refreshData(state.selectedDate);
+    } catch (err) {
+      showToast(`Formula save failed: ${(err as Error).message}`);
+    }
+  });
+
+  // Unified Fast Check-In Form Submit
+  document.getElementById('form-unified-checkin')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const numVal = (id: string): number => {
+      const raw = (document.getElementById(id) as HTMLInputElement | null)?.value?.trim() || '';
+      if (!raw) return 0;
+      const v = parseFloat(raw);
+      return Number.isFinite(v) ? v : 0;
+    };
+    const hasVal = (id: string): boolean => {
+      return ((document.getElementById(id) as HTMLInputElement | null)?.value?.trim() || '') !== '';
+    };
+
+    const localDate = (document.getElementById('in-chk-date') as HTMLInputElement | null)?.value || state.selectedDate;
+    const screenH = numVal('in-chk-screen-h');
+    const screenM = numVal('in-chk-screen-m');
+    const screenTotalMin = hasVal('in-chk-screen-h') || hasVal('in-chk-screen-m') ? Math.round(screenH * 60 + screenM) : 0;
+
+    const romTests: Array<{ test_slug: string; value_num: number; unit: string }> = [];
+    if (hasVal('in-rom-ankle')) romTests.push({ test_slug: 'ankle_ktw_cm', value_num: numVal('in-rom-ankle'), unit: 'cm' });
+    if (hasVal('in-rom-reach')) romTests.push({ test_slug: 'sit_reach_in', value_num: numVal('in-rom-reach'), unit: 'in' });
+    if (hasVal('in-rom-shoulder')) romTests.push({ test_slug: 'shoulder_flex_deg', value_num: numVal('in-rom-shoulder'), unit: 'deg' });
+    if (hasVal('in-rom-squat')) romTests.push({ test_slug: 'deep_squat_score', value_num: numVal('in-rom-squat'), unit: '/5' });
+
+    const payload: UnifiedCheckinInput = {
+      local_date: localDate,
+      weight_lb: numVal('in-chk-weight'),
+      body_fat_pct: numVal('in-chk-bf'),
+      waist_in: numVal('in-chk-waist'),
+      screen_time_min: screenTotalMin,
+      mobility_min: Math.round(numVal('in-chk-mob-min')),
+      sleep_hours: numVal('in-chk-sleep-hrs'),
+      sleep_efficiency_pct: numVal('in-chk-sleep-eff'),
+      cardio_min: numVal('in-chk-cardio-min'),
+      cardio_distance_mi: numVal('in-chk-cardio-mi'),
+      cardio_avg_hr: Math.round(numVal('in-chk-cardio-hr')),
+      mobility_tests: romTests,
+    };
+
+    try {
+      const res = await api.logCheckin(payload);
+      state.checkinDrawerOpen = false;
+      const summary = res.logged?.length ? res.logged.join(', ') : 'check-in';
+      showToast(`Saved ${summary} — scores updated!`);
+      await refreshData(localDate);
+    } catch (err) {
+      showToast(`Check-in failed: ${(err as Error).message}`);
+    }
   });
 
   // 7-day Calendar selection

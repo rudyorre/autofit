@@ -53,6 +53,10 @@ func (s *Store) ExportBackup(ctx context.Context, userID string) (*store.BackupB
 	if err != nil {
 		return nil, err
 	}
+	prefs, _ := s.GetUserPreferences(ctx, userID)
+	phases, _ := s.ListTrainingPhases(ctx, userID)
+	checkins, _ := s.ListDailyCheckins(ctx, userID, "", "")
+	mobTests, _ := s.ListMobilityTests(ctx, userID)
 
 	return &store.BackupBundle{
 		ExportedAt:       time.Now().UTC(),
@@ -65,6 +69,10 @@ func (s *Store) ExportBackup(ctx context.Context, userID string) (*store.BackupB
 		BodyMeasurements: body,
 		LabObservations:  labs,
 		Calibrations:     cals,
+		Preferences:      prefs,
+		TrainingPhases:   phases,
+		DailyCheckins:    checkins,
+		MobilityTests:    mobTests,
 	}, nil
 }
 

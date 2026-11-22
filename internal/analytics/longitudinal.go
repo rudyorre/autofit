@@ -100,8 +100,45 @@ func NewEngine(repo store.Repository) *Engine {
 
 func (e *Engine) BuildMetricCatalog(ctx context.Context, userID string, refDate time.Time) ([]MetricCatalogItem, error) {
 	var items []MetricCatalogItem
+	prefs, _ := e.repo.GetUserPreferences(ctx, userID)
+	if prefs == nil {
+		prefs = store.DefaultUserPreferences(userID)
+	}
 
-	// Priority lifts first (Bench, Squat, DB Row, Incline, Shoulder Press, Lat Pulldown, etc.)
+	// Enabled composite pillar scores first (computed purely on demand!)
+	pillarCatalog := []struct {
+		key, label, title, col string
+	}{
+		{"strength", "Strength Score", "Strength Composite (0–100 Percentile)", "--m3-teal"},
+		{"cardio", "Cardio Score", "Cardio Composite (0–100 VO2 Percentile)", "--m3-amber"},
+		{"sleep", "Sleep Score", "Sleep Composite (0–100 RU-SATED Optimum)", "--m3-blue"},
+		{"weight", "Weight", "Body Weight (EWMA Trend)", "--m3-teal"},
+		{"body_fat", "Body Fat %", "Body Fat Percentage", "--m3-teal"},
+		{"flexibility", "Flexibility Score", "Flexibility Composite (0–100 ROM + Volume)", "--m3-teal"},
+		{"screen_time", "Screen Time", "Daily Screen Time (hrs/day)", "--m3-coral"},
+	}
+	for _, pc := range pillarCatalog {
+		if !prefs.FeatureFlags.IsPillarEnabled(pc.key) {
+			continue
+		}
+		if pc.key == "weight" || pc.key == "body_fat" || pc.key == "screen_time" {
+			unit := "lb"
+			if pc.key == "body_fat" {
+				unit = "%"
+			} else if pc.key == "screen_time" {
+				unit = "hrs/d"
+			}
+			items = append(items, MetricCatalogItem{
+				Key: pc.key, Category: "pillar", Label: pc.label, Title: pc.title, Unit: unit, ColorToken: pc.col,
+			})
+		} else {
+			items = append(items, MetricCatalogItem{
+				Key: "pillar:" + pc.key, Category: "pillar", Label: pc.label, Title: pc.title, Unit: "pts", ColorToken: pc.col,
+			})
+		}
+	}
+
+	// Priority lifts next (Bench, Squat, DB Row, Incline, Shoulder Press, Lat Pulldown, etc.)
 	exs, err := e.repo.ListExercises(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -137,66 +174,73 @@ func (e *Engine) BuildMetricCatalog(ctx context.Context, userID string, refDate 
 		return exs[i].Name < exs[j].Name
 	})
 
-	for _, ex := range exs {
-		sets := setsByEx[ex.ID]
-		if len(sets) == 0 {
-			continue
+	if prefs.FeatureFlags.PillarStrength {
+		for _, ex := range exs {
+			sets := setsByEx[ex.ID]
+			if len(sets) == 0 {
+				continue
+			}
+			first := liftDisplayWeight(ex, sets[0].WorkoutSet)
+			last := liftDisplayWeight(ex, sets[len(sets)-1].WorkoutSet)
+			delta := last - first
+			sign := "+"
+			if delta < 0 {
+				sign = ""
+			}
+			unit := "lb"
+			if ex.LoadMode == "per_hand" {
+				unit = "lb/hand"
+			}
+			items = append(items, MetricCatalogItem{
+				Key:        "lift:" + ex.Slug,
+				Category:   "lift",
+				Label:      ex.Name,
+				Title:      fmt.Sprintf("%s (%d×%d)", ex.Name, ex.DefaultSets, ex.DefaultReps),
+				Unit:       unit,
+				ColorToken: "--m3-teal",
+				Current:    fmt.Sprintf("%.1f %s", last, unit),
+				Delta:      fmt.Sprintf("%s%.1f %s", sign, delta, unit),
+				SampleCnt:  len(sets),
+			})
 		}
-		first := liftDisplayWeight(ex, sets[0].WorkoutSet)
-		last := liftDisplayWeight(ex, sets[len(sets)-1].WorkoutSet)
-		delta := last - first
-		sign := "+"
-		if delta < 0 {
-			sign = ""
-		}
-		unit := "lb"
-		if ex.LoadMode == "per_hand" {
-			unit = "lb/hand"
-		}
-		items = append(items, MetricCatalogItem{
-			Key:        "lift:" + ex.Slug,
-			Category:   "lift",
-			Label:      ex.Name,
-			Title:      fmt.Sprintf("%s (%d×%d)", ex.Name, ex.DefaultSets, ex.DefaultReps),
-			Unit:       unit,
-			ColorToken: "--m3-teal",
-			Current:    fmt.Sprintf("%.1f %s", last, unit),
-			Delta:      fmt.Sprintf("%s%.1f %s", sign, delta, unit),
-			SampleCnt:  len(sets),
-		})
 	}
 
-	// Core Wearable, Cardio & Body metrics
-	builtin := []struct {
+	// Raw Cardio / Sleep / Wearable metrics (filtered cleanly by active flags)
+	type builtinItem struct {
 		key, cat, label, title, unit, col string
-	}{
-		{"vo2", "cardio", "VO2 Max", "Running VDOT / VO2 Max (.FIT + GH)", "mL/kg", "--m3-amber"},
-		{"rhr", "wearable", "Resting HR", "Resting Heart Rate (Rolling Baseline)", "bpm", "--m3-coral"},
-		{"hrv", "wearable", "HRV (RMSSD)", "Overnight HRV (RMSSD)", "ms", "--m3-teal"},
-		{"sleep", "wearable", "Sleep", "Sleep Duration & Quality", "hrs", "--m3-blue"},
-		{"steps", "wearable", "Steps", "Daily Steps", "/day", "--m3-teal"},
-		{"readiness", "wearable", "Readiness", "Systemic Readiness Score", "pts", "--m3-teal"},
-		{"weight", "body", "Weight", "Body Weight (EWMA Smoothed)", "lb", "--m3-teal"},
-		{"body_fat", "body", "Body Fat %", "Body Fat Percentage", "%", "--m3-teal"},
+		show                              bool
+	}
+	builtin := []builtinItem{
+		{"vo2", "cardio", "VO2 Max", "Running VDOT / VO2 Max (.FIT + GH)", "mL/kg", "--m3-amber", prefs.FeatureFlags.PillarCardio},
+		{"sleep", "wearable", "Sleep Hours", "Sleep Duration", "hrs", "--m3-blue", prefs.FeatureFlags.PillarSleep},
+		{"rhr", "wearable", "Resting HR", "Resting Heart Rate (Rolling Baseline)", "bpm", "--m3-coral", prefs.FeatureFlags.PillarCardio || prefs.FeatureFlags.ToolWearableIntraday},
+		{"hrv", "wearable", "HRV (RMSSD)", "Overnight HRV (RMSSD)", "ms", "--m3-teal", prefs.FeatureFlags.PillarSleep || prefs.FeatureFlags.ToolWearableIntraday},
+		{"steps", "wearable", "Steps", "Daily Steps", "/day", "--m3-teal", prefs.FeatureFlags.ToolWearableIntraday},
+		{"readiness", "wearable", "Readiness", "Systemic Readiness Score", "pts", "--m3-teal", prefs.FeatureFlags.ToolWearableIntraday},
 	}
 	for _, b := range builtin {
+		if !b.show {
+			continue
+		}
 		items = append(items, MetricCatalogItem{
 			Key: b.key, Category: b.cat, Label: b.label, Title: b.title, Unit: b.unit, ColorToken: b.col,
 		})
 	}
 
-	// Clinical FHIR Lab Biomarkers
-	labs, _ := e.repo.ListLatestLabObservations(ctx, userID)
-	for _, ob := range labs {
-		items = append(items, MetricCatalogItem{
-			Key:        "lab:" + ob.BiomarkerSlug,
-			Category:   "lab",
-			Label:      ob.BiomarkerName,
-			Title:      fmt.Sprintf("%s (Clinical FHIR R4 • LOINC %s)", ob.BiomarkerName, ob.LOINCCode),
-			Unit:       ob.Unit,
-			ColorToken: "--m3-teal",
-			Current:    fmt.Sprintf("%.1f %s", ob.ValueNum, ob.Unit),
-		})
+	// Clinical FHIR Lab Biomarkers (shown when Health Labs flag is enabled)
+	if prefs.FeatureFlags.ViewHealthLabs {
+		labs, _ := e.repo.ListLatestLabObservations(ctx, userID)
+		for _, ob := range labs {
+			items = append(items, MetricCatalogItem{
+				Key:        "lab:" + ob.BiomarkerSlug,
+				Category:   "lab",
+				Label:      ob.BiomarkerName,
+				Title:      fmt.Sprintf("%s (Clinical FHIR R4 • LOINC %s)", ob.BiomarkerName, ob.LOINCCode),
+				Unit:       ob.Unit,
+				ColorToken: "--m3-teal",
+				Current:    fmt.Sprintf("%.1f %s", ob.ValueNum, ob.Unit),
+			})
+		}
 	}
 
 	return items, nil
@@ -211,6 +255,10 @@ func (e *Engine) BuildTrend(ctx context.Context, userID, metricKey, horizon stri
 	// Alias convenience keys from UI ("bench" -> "lift:bench-press", "squat" -> "lift:squat", "dbrow" -> "lift:dumbbell-row", "apob" -> "lab:apob")
 	metricKey = normalizeMetricAlias(metricKey)
 
+	if strings.HasPrefix(metricKey, "pillar:") {
+		pillarKey := strings.TrimPrefix(metricKey, "pillar:")
+		return e.buildPillarTrend(ctx, userID, pillarKey, horizon, refDate)
+	}
 	if strings.HasPrefix(metricKey, "lift:") {
 		slug := strings.TrimPrefix(metricKey, "lift:")
 		return e.buildLiftTrend(ctx, userID, slug, horizon, refDate)
@@ -451,6 +499,38 @@ func (e *Engine) buildVitalsOrBodyTrend(ctx context.Context, userID, key, horizo
 			Key: "vo2", Category: "cardio", Label: "VO2 Max", Title: "Running VDOT / VO2 Max (.FIT + GH)",
 			Unit: "mL/kg", ColorToken: "--m3-amber", Horizon: horizon, RefDate: refDate,
 			Samples: samples, GapDaysThresh: 21, AggregateMax: true,
+		}), nil
+
+	case "screen_time":
+		checkins, _ := e.repo.ListDailyCheckins(ctx, userID, "", "")
+		var samples []rawSample
+		for _, c := range checkins {
+			if c.ScreenTimeMin > 0 {
+				if dt, err := time.Parse("2006-01-02", c.LocalDate); err == nil {
+					samples = append(samples, rawSample{Date: dt, Value: math.Round((float64(c.ScreenTimeMin)/60.0)*100) / 100})
+				}
+			}
+		}
+		return bucketizeAndAnalyze(bucketConfig{
+			Key: "screen_time", Category: "checkin", Label: "Screen Time", Title: "Daily Screen Time (Non-Work)",
+			Unit: "hrs/d", ColorToken: "--m3-coral", InvertGood: true, Horizon: horizon, RefDate: refDate,
+			Samples: samples, GapDaysThresh: 7,
+		}), nil
+
+	case "flexibility":
+		checkins, _ := e.repo.ListDailyCheckins(ctx, userID, "", "")
+		var samples []rawSample
+		for _, c := range checkins {
+			if c.MobilityMin > 0 {
+				if dt, err := time.Parse("2006-01-02", c.LocalDate); err == nil {
+					samples = append(samples, rawSample{Date: dt, Value: float64(c.MobilityMin)})
+				}
+			}
+		}
+		return bucketizeAndAnalyze(bucketConfig{
+			Key: "flexibility", Category: "checkin", Label: "Mobility Minutes", Title: "Mobility & Stretching Sessions",
+			Unit: "min", ColorToken: "--m3-teal", Horizon: horizon, RefDate: refDate,
+			Samples: samples, GapDaysThresh: 14,
 		}), nil
 
 	default:

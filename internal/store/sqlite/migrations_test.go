@@ -24,8 +24,8 @@ func TestSchemaMigrationsAndOnlineVacuumBackup(t *testing.T) {
 	}
 
 	var migCnt int
-	if err := st.db.QueryRow(`SELECT COUNT(1) FROM schema_migrations WHERE version = '001_init.sql'`).Scan(&migCnt); err != nil || migCnt != 1 {
-		t.Fatalf("expected 001_init.sql recorded in schema_migrations, got cnt=%d err=%v", migCnt, err)
+	if err := st.db.QueryRow(`SELECT COUNT(1) FROM schema_migrations WHERE version IN ('001_init.sql', '002_phases_pillars_flags.sql')`).Scan(&migCnt); err != nil || migCnt != 2 {
+		t.Fatalf("expected 001 and 002 recorded in schema_migrations, got cnt=%d err=%v", migCnt, err)
 	}
 
 	// Verify online VACUUM INTO creates an independent valid SQLite snapshot

@@ -190,10 +190,103 @@ export interface MetricCatalogItemDTO {
   sample_cnt?: number;
 }
 
+export interface FeatureFlagsDTO {
+  pillar_strength: boolean;
+  pillar_cardio: boolean;
+  pillar_sleep: boolean;
+  pillar_weight: boolean;
+  pillar_body_fat: boolean;
+  pillar_flexibility: boolean;
+  pillar_screen_time: boolean;
+  view_health_labs: boolean;
+  tool_ols_calibration: boolean;
+  tool_wearable_intraday: boolean;
+}
+
+export interface UserPreferencesDTO {
+  user_id: string;
+  sex: 'male' | 'female';
+  age: number;
+  bf_opt_low: number;
+  bf_opt_high: number;
+  weight_target_lb: number;
+  screen_time_target_min: number;
+  mobility_weekly_target_min: number;
+  feature_flags: FeatureFlagsDTO;
+  formula_weights?: Record<string, number>;
+}
+
+export interface TrainingPhaseDTO {
+  id: string;
+  user_id?: string;
+  name: string;
+  start_date: string;
+  end_date?: string;
+  focus_pillars: string[];
+  targets: Record<string, number>;
+  floors: Record<string, number>;
+  notes?: string;
+  is_active: boolean;
+}
+
+export interface DailyCheckinDTO {
+  id?: string;
+  local_date: string;
+  screen_time_min: number;
+  mobility_min: number;
+  waist_in: number;
+  notes?: string;
+  source?: string;
+}
+
+export interface ScoreIngredientDTO {
+  label: string;
+  raw_value: string;
+  points: number;
+  max_points: number;
+  weight_pct: number;
+  note?: string;
+  metric_key?: string;
+}
+
+export interface PillarCardDTO {
+  key: string;
+  label: string;
+  color_token: string;
+  enabled: boolean;
+  role: 'focus' | 'maintenance';
+  score_model: 'percentile' | 'optimum';
+  score_model_note: string;
+  formula_version: string;
+  score: number;
+  has_data: boolean;
+  primary_raw: string;
+  secondary_raw?: string;
+  delta_30d: number;
+  delta_text: string;
+  target_or_floor: number;
+  status: 'focus_improving' | 'focus_steady' | 'holding' | 'improving' | 'slipping' | 'no_data';
+  status_label: string;
+  metric_key: string;
+  breakdown: ScoreIngredientDTO[];
+}
+
+export interface PillarDashboardDTO {
+  as_of_date: string;
+  phase: TrainingPhaseDTO;
+  preferences: UserPreferencesDTO;
+  pillars: PillarCardDTO[];
+  on_track_count: number;
+  enabled_count: number;
+  today_checkin?: DailyCheckinDTO;
+  latest_mobility_tests: Record<string, number>;
+}
+
 export interface BootstrapPayload {
   anchor_date: string;
   selected_date: string;
   selected_index: number;
+  overview?: PillarDashboardDTO;
   week_strip: DayCardDTO[];
   intraday: {
     hourly_steps: number[];

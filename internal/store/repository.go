@@ -275,6 +275,157 @@ type OAuthTokenState struct {
 	TestingMode7Day  bool      `json:"testing_mode_7day"`
 }
 
+type FeatureFlags struct {
+	PillarStrength       bool `json:"pillar_strength"`
+	PillarCardio         bool `json:"pillar_cardio"`
+	PillarSleep          bool `json:"pillar_sleep"`
+	PillarWeight         bool `json:"pillar_weight"`
+	PillarBodyFat        bool `json:"pillar_body_fat"`
+	PillarFlexibility    bool `json:"pillar_flexibility"`
+	PillarScreenTime     bool `json:"pillar_screen_time"`
+	ViewHealthLabs       bool `json:"view_health_labs"`
+	ToolOLSCalibration   bool `json:"tool_ols_calibration"`
+	ToolWearableIntraday bool `json:"tool_wearable_intraday"`
+}
+
+func DefaultFeatureFlags() FeatureFlags {
+	return FeatureFlags{
+		PillarStrength:       true,
+		PillarCardio:         true,
+		PillarSleep:          true,
+		PillarWeight:         false,
+		PillarBodyFat:        false,
+		PillarFlexibility:    false,
+		PillarScreenTime:     false,
+		ViewHealthLabs:       false,
+		ToolOLSCalibration:   false,
+		ToolWearableIntraday: false,
+	}
+}
+
+func (f FeatureFlags) IsPillarEnabled(key string) bool {
+	switch key {
+	case "strength":
+		return f.PillarStrength
+	case "cardio":
+		return f.PillarCardio
+	case "sleep":
+		return f.PillarSleep
+	case "weight":
+		return f.PillarWeight
+	case "body_fat":
+		return f.PillarBodyFat
+	case "flexibility":
+		return f.PillarFlexibility
+	case "screen_time":
+		return f.PillarScreenTime
+	default:
+		return false
+	}
+}
+
+type UserPreferences struct {
+	UserID                  string             `json:"user_id"`
+	Sex                     string             `json:"sex"` // male | female
+	Age                     int                `json:"age"`
+	BFOptLow                float64            `json:"bf_opt_low"`
+	BFOptHigh               float64            `json:"bf_opt_high"`
+	WeightTargetLb          float64            `json:"weight_target_lb"`
+	ScreenTimeTargetMin     int                `json:"screen_time_target_min"`
+	MobilityWeeklyTargetMin int                `json:"mobility_weekly_target_min"`
+	FeatureFlags            FeatureFlags       `json:"feature_flags"`
+	FormulaWeights          map[string]float64 `json:"formula_weights,omitempty"`
+	UpdatedAt               time.Time          `json:"updated_at"`
+}
+
+func DefaultUserPreferences(userID string) *UserPreferences {
+	if userID == "" {
+		userID = DefaultUserID
+	}
+	return &UserPreferences{
+		UserID:                  userID,
+		Sex:                     "male",
+		Age:                     28,
+		BFOptLow:                12.0,
+		BFOptHigh:               16.0,
+		WeightTargetLb:          165.0,
+		ScreenTimeTargetMin:     120,
+		MobilityWeeklyTargetMin: 60,
+		FeatureFlags:            DefaultFeatureFlags(),
+		FormulaWeights:          map[string]float64{},
+		UpdatedAt:               time.Now().UTC(),
+	}
+}
+
+type TrainingPhase struct {
+	ID           string             `json:"id"`
+	UserID       string             `json:"user_id"`
+	Name         string             `json:"name"`
+	StartDate    string             `json:"start_date"`
+	EndDate      string             `json:"end_date,omitempty"`
+	FocusPillars []string           `json:"focus_pillars"` // 1-2 active focus pillars
+	Targets      map[string]float64 `json:"targets"`       // optional target 0-100 score per focus pillar
+	Floors       map[string]float64 `json:"floors"`        // maintenance floor 0-100 score per pillar
+	Notes        string             `json:"notes,omitempty"`
+	IsActive     bool               `json:"is_active"`
+	CreatedAt    time.Time          `json:"created_at"`
+}
+
+func DefaultTrainingPhase(userID, startDate string) *TrainingPhase {
+	if userID == "" {
+		userID = DefaultUserID
+	}
+	if startDate == "" {
+		startDate = time.Now().UTC().Format("2006-01-02")
+	}
+	return &TrainingPhase{
+		ID:           "phase-default",
+		UserID:       userID,
+		Name:         "Strength & Cardio Build",
+		StartDate:    startDate,
+		FocusPillars: []string{"strength", "cardio"},
+		Targets: map[string]float64{
+			"strength": 75,
+			"cardio":   80,
+		},
+		Floors: map[string]float64{
+			"strength":    55,
+			"cardio":      65,
+			"sleep":       75,
+			"weight":      75,
+			"body_fat":    75,
+			"flexibility": 65,
+			"screen_time": 65,
+		},
+		Notes:     "Push meaningful progress on Strength and Cardio while holding Sleep above baseline.",
+		IsActive:  true,
+		CreatedAt: time.Now().UTC(),
+	}
+}
+
+type DailyCheckin struct {
+	ID            string    `json:"id"`
+	UserID        string    `json:"user_id"`
+	LocalDate     string    `json:"local_date"`
+	ScreenTimeMin int       `json:"screen_time_min"`
+	MobilityMin   int       `json:"mobility_min"`
+	WaistIn       float64   `json:"waist_in"`
+	Notes         string    `json:"notes,omitempty"`
+	Source        string    `json:"source"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+type MobilityTest struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	LocalDate string    `json:"local_date"`
+	TestSlug  string    `json:"test_slug"` // ankle_ktw_cm | sit_reach_in | shoulder_flex_deg | deep_squat_score
+	ValueNum  float64   `json:"value_num"`
+	Unit      string    `json:"unit"`
+	Notes     string    `json:"notes,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type BackupBundle struct {
 	ExportedAt       time.Time          `json:"exported_at"`
 	Exercises        []Exercise         `json:"exercises"`
@@ -287,6 +438,10 @@ type BackupBundle struct {
 	LabPanels        []LabPanel         `json:"lab_panels"`
 	LabObservations  []LabObservation   `json:"lab_observations"`
 	Calibrations     []ScoreCalibration `json:"calibrations"`
+	Preferences      *UserPreferences   `json:"preferences,omitempty"`
+	TrainingPhases   []TrainingPhase    `json:"training_phases,omitempty"`
+	DailyCheckins    []DailyCheckin     `json:"daily_checkins,omitempty"`
+	MobilityTests    []MobilityTest     `json:"mobility_tests,omitempty"`
 }
 
 type Repository interface {
@@ -346,6 +501,17 @@ type Repository interface {
 	UpsertLabPanel(ctx context.Context, p *LabPanel) error
 	ListLabObservations(ctx context.Context, userID, biomarkerSlug string) ([]LabObservation, error)
 	ListLatestLabObservations(ctx context.Context, userID string) ([]LabObservation, error)
+
+	// Feature Flags, Formula Preferences, Training Phases & Unified Check-Ins
+	GetUserPreferences(ctx context.Context, userID string) (*UserPreferences, error)
+	UpsertUserPreferences(ctx context.Context, p *UserPreferences) error
+	GetActiveTrainingPhase(ctx context.Context, userID string) (*TrainingPhase, error)
+	ListTrainingPhases(ctx context.Context, userID string) ([]TrainingPhase, error)
+	UpsertTrainingPhase(ctx context.Context, p *TrainingPhase) error
+	UpsertDailyCheckin(ctx context.Context, c *DailyCheckin) error
+	ListDailyCheckins(ctx context.Context, userID, startDate, endDate string) ([]DailyCheckin, error)
+	UpsertMobilityTest(ctx context.Context, m *MobilityTest) error
+	ListMobilityTests(ctx context.Context, userID string) ([]MobilityTest, error)
 
 	// Full Backup Export
 	ExportBackup(ctx context.Context, userID string) (*BackupBundle, error)
